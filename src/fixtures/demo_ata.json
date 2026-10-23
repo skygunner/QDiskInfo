@@ -1,0 +1,340 @@
+{
+  "json_format_version" : [ 1, 0 ],
+  "smartctl" : {
+    "exit_status" : 0,
+    "output" : [
+      "smartctl 7.5 2025-04-30 r5714 [x86_64-linux-6.18.52] (local build)",
+      "Copyright (C) 2002-23, Bruce Allen, Christian Franke, www.smartmontools.org",
+      "=== START OF INFORMATION SECTION ===",
+      "Model Family:     Samsung Based SSDs",
+      "Device Model:     Samsung SSD 870 EVO 1TB",
+      "Serial Number:    S6Z1NJ0R512345N",
+      "LU WWN Device Id: 5 002538 e 4a1b2c3d",
+      "Firmware Version: 2B2QEXM7",
+      "User Capacity:    1,000,204,886,016 bytes [1.00 TB]",
+      "Sector Size:      512 bytes logical/physical",
+      "Rotation Rate:    Solid State Device",
+      "Form Factor:      2.5 inches",
+      "TRIM Command:     Available, deterministic",
+      "Device is:        Not in smartctl database [for details use: -P showall]",
+      "ATA Version is:   ACS-4 (minor revision not indicated)",
+      "SATA Version is:  SATA 3.3, 6.0 Gb/s (current: 6.0 Gb/s)",
+      "Local Time is:    Tue Sep 23 10:00:00 2026 CST",
+      "SMART support is: Available - device has SMART capability.",
+      "SMART support is: Enabled"
+    ]
+  },
+  "device" : {
+    "name" : "/dev/sda",
+    "info_name" : "/dev/sda [SAT]",
+    "type" : "sat",
+    "protocol" : "ATA"
+  },
+  "model_name" : "Samsung SSD 870 EVO 1TB",
+  "serial_number" : "S6Z1NJ0R512345N",
+  "firmware_version" : "2B2QEXM7",
+  "ata_version" : {
+    "string" : "ACS-4",
+    "major_value" : 1020,
+    "minor_value" : 5908
+  },
+  "sata_version" : {
+    "string" : "SATA 3.3",
+    "value" : 51
+  },
+  "interface_speed" : {
+    "max" : {
+      "string" : "6.0 Gb/s",
+      "units_per_second" : 600,
+      "bits_per_unit" : 1000000
+    },
+    "current" : {
+      "string" : "6.0 Gb/s",
+      "units_per_second" : 600,
+      "bits_per_unit" : 1000000
+    }
+  },
+  "user_capacity" : {
+    "blocks" : 1953525168,
+    "bytes" : 1000204886016
+  },
+  "logical_block_size" : 512,
+  "physical_block_size" : 512,
+  "rotation_rate" : 0,
+  "form_factor" : {
+    "ata_value" : 3,
+    "name" : "2.5 inches"
+  },
+  "in_smartctl_database" : false,
+  "ata_smart_data" : {
+    "offline_data_collection" : {
+      "status" : {
+        "value" : 0,
+        "string" : "was never started"
+      },
+      "completion_seconds" : 0
+    },
+    "self_test" : {
+      "status" : {
+        "value" : 0,
+        "string" : "completed without error",
+        "passed" : true
+      },
+      "polling_minutes" : {
+        "short" : 2,
+        "extended" : 95,
+        "conveyance" : 2
+      }
+    },
+    "capabilities" : {
+      "values" : [ 91, 3 ],
+      "exec_offline_immediate_supported" : true,
+      "offline_is_aborted_upon_new_cmd" : false,
+      "offline_surface_scan_supported" : true,
+      "self_tests_supported" : true,
+      "conveyance_self_test_supported" : true,
+      "selective_self_test_supported" : true,
+      "attribute_autosave_enabled" : true,
+      "error_logging_supported" : true,
+      "gp_logging_supported" : true
+    }
+  },
+  "smart_status" : {
+    "passed" : true
+  },
+  "ata_smart_attributes_table_revision" : 1,
+  "ata_smart_attributes" : {
+    "revision" : 1,
+    "table" : [
+      {
+        "id" : 5,
+        "name" : "Reallocated_Sector_Ct",
+        "value" : 100,
+        "worst" : 100,
+        "thresh" : 10,
+        "when_failed" : "",
+        "raw" : {
+          "value" : 0,
+          "string" : "0"
+        }
+      },
+      {
+        "id" : 9,
+        "name" : "Power_On_Hours",
+        "value" : 99,
+        "worst" : 99,
+        "thresh" : 0,
+        "when_failed" : "",
+        "raw" : {
+          "value" : 4210,
+          "string" : "4210"
+        }
+      },
+      {
+        "id" : 12,
+        "name" : "Power_Cycle_Count",
+        "value" : 99,
+        "worst" : 99,
+        "thresh" : 0,
+        "when_failed" : "",
+        "raw" : {
+          "value" : 571,
+          "string" : "571"
+        }
+      },
+      {
+        "id" : 177,
+        "name" : "Wear_Leveling_Count",
+        "value" : 98,
+        "worst" : 98,
+        "thresh" : 0,
+        "when_failed" : "",
+        "raw" : {
+          "value" : 5,
+          "string" : "5"
+        }
+      },
+      {
+        "id" : 179,
+        "name" : "Used_Rsvd_Blk_Cnt_Tot",
+        "value" : 100,
+        "worst" : 100,
+        "thresh" : 10,
+        "when_failed" : "",
+        "raw" : {
+          "value" : 0,
+          "string" : "0"
+        }
+      },
+      {
+        "id" : 181,
+        "name" : "Program_Fail_Cnt_Total",
+        "value" : 100,
+        "worst" : 100,
+        "thresh" : 10,
+        "when_failed" : "",
+        "raw" : {
+          "value" : 0,
+          "string" : "0"
+        }
+      },
+      {
+        "id" : 182,
+        "name" : "Erase_Fail_Count_Total",
+        "value" : 100,
+        "worst" : 100,
+        "thresh" : 10,
+        "when_failed" : "",
+        "raw" : {
+          "value" : 0,
+          "string" : "0"
+        }
+      },
+      {
+        "id" : 183,
+        "name" : "Runtime_Bad_Block",
+        "value" : 100,
+        "worst" : 100,
+        "thresh" : 10,
+        "when_failed" : "",
+        "raw" : {
+          "value" : 0,
+          "string" : "0"
+        }
+      },
+      {
+        "id" : 187,
+        "name" : "Uncorrectable_Error_Cnt",
+        "value" : 100,
+        "worst" : 100,
+        "thresh" : 0,
+        "when_failed" : "",
+        "raw" : {
+          "value" : 0,
+          "string" : "0"
+        }
+      },
+      {
+        "id" : 190,
+        "name" : "Airflow_Temperature_Cel",
+        "value" : 66,
+        "worst" : 52,
+        "thresh" : 0,
+        "when_failed" : "",
+        "raw" : {
+          "value" : 54086534,
+          "string" : "34 (Min/Max 24/44)"
+        }
+      },
+      {
+        "id" : 194,
+        "name" : "Temperature_Celsius",
+        "value" : 66,
+        "worst" : 52,
+        "thresh" : 0,
+        "when_failed" : "",
+        "raw" : {
+          "value" : 54086534,
+          "string" : "34 (Min/Max 24/44)"
+        }
+      },
+      {
+        "id" : 195,
+        "name" : "ECC_Error_Rate",
+        "value" : 200,
+        "worst" : 200,
+        "thresh" : 0,
+        "when_failed" : "",
+        "raw" : {
+          "value" : 0,
+          "string" : "0"
+        }
+      },
+      {
+        "id" : 199,
+        "name" : "CRC_Error_Count",
+        "value" : 100,
+        "worst" : 100,
+        "thresh" : 0,
+        "when_failed" : "",
+        "raw" : {
+          "value" : 0,
+          "string" : "0"
+        }
+      },
+      {
+        "id" : 241,
+        "name" : "Total_LBAs_Written",
+        "value" : 99,
+        "worst" : 99,
+        "thresh" : 0,
+        "when_failed" : "",
+        "raw" : {
+          "value" : 2851562500,
+          "string" : "2851562500"
+        }
+      },
+      {
+        "id" : 242,
+        "name" : "Total_LBAs_Read",
+        "value" : 99,
+        "worst" : 99,
+        "thresh" : 0,
+        "when_failed" : "",
+        "raw" : {
+          "value" : 656250000,
+          "string" : "656250000"
+        }
+      },
+      {
+        "id" : 250,
+        "name" : "SATA_Downshift_Count",
+        "value" : 100,
+        "worst" : 100,
+        "thresh" : 0,
+        "when_failed" : "",
+        "raw" : {
+          "value" : 0,
+          "string" : "0"
+        }
+      },
+      {
+        "id" : 251,
+        "name" : "Minimum_Flashes_Count",
+        "value" : 100,
+        "worst" : 100,
+        "thresh" : 0,
+        "when_failed" : "",
+        "raw" : {
+          "value" : 0,
+          "string" : "0"
+        }
+      }
+    ]
+  },
+  "ata_smart_self_test_log" : {
+    "standard" : {
+      "revision" : 1,
+      "table" : [ ]
+    }
+  },
+  "ata_smart_error_log" : {
+    "summary" : {
+      "revision" : 1,
+      "count" : 0
+    }
+  },
+  "temperature" : {
+    "current" : 34,
+    "power_cycle_min" : 24,
+    "power_cycle_max" : 44,
+    "lifetime_min" : 20,
+    "lifetime_max" : 51,
+    "op_limit_max" : 70,
+    "drive_trip" : 70
+  },
+  "power_cycle_count" : 571,
+  "power_on_time" : {
+    "hours" : 4210
+  }
+}

@@ -2,6 +2,10 @@
 
 #include "utils.h"
 #include "gridview.h"
+#include "disksummary.h"
+#include "magicianview.h"
+#include "crystalview.h"
+#include "theme.h"
 
 #include <QAction>
 #include <QActionGroup>
@@ -30,6 +34,9 @@ public:
     MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
 
+    // Switches the interface mode at runtime (View menu / programmatic hook).
+    void setUiMode(UiMode mode, bool resizeWindow);
+
 private slots:
     void on_actionQuit_triggered();
     void on_actionSave_JSON_triggered();
@@ -50,6 +57,12 @@ private slots:
     void on_actionGrid_View_triggered();
 
     void on_actionSave_Image_triggered();
+
+    void onMagicianStyleToggled(bool checked);
+
+    void onCrystalStyleToggled(bool checked);
+
+    void onClassicStyleToggled(bool checked);
 
 private:
     Ui::MainWindow *ui;
@@ -84,6 +97,23 @@ private:
     bool globalIsNvme;
     QVector<QPair<QString, int>> globalNvmeSmartOrdered;
     GridView *gridView;
+
+    // Themed interface modes (View menu). The classic .ui layout lives in
+    // classicPage; Magician/Crystal are dedicated views fed from the same
+    // scan/populate pipeline through `summary` and `driveSlots`.
+    UiMode uiMode = UiMode::Magician;
+    QWidget *classicPage = nullptr;
+    MagicianView *magicianView = nullptr;
+    CrystalView *crystalView = nullptr;
+    DiskSummary summary;
+    QVector<DriveSlot> driveSlots;
+    QAction *actionMagician_Style = nullptr;
+    QAction *actionCrystal_Style = nullptr;
+    QAction *actionClassic_Style = nullptr;
+
+    void buildUiModePages();
+    void createViewMenu();
+    void updateThemedViews();
 
     void onNextButtonClicked();
     void onPrevButtonClicked();

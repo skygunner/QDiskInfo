@@ -1,0 +1,312 @@
+/* QDiskInfo — "Magician" dark theme (Samsung Magician inspired).
+   Tokens use @key@ placeholders substituted by Theme::apply(). */
+
+* {
+    color: @text_primary@;
+    font-size: 13px;
+}
+
+QMainWindow, QDialog {
+    background: @bg_base@;
+}
+
+QMenuBar {
+    background: @bg_sidebar@;
+    border-bottom: 1px solid @stroke@;
+    padding: 2px;
+}
+QMenuBar::item {
+    background: transparent;
+    color: @text_secondary@;
+    padding: 5px 10px;
+    border-radius: 4px;
+    margin: 1px;
+}
+QMenuBar::item:selected {
+    background: @bg_card_hover@;
+    color: @text_primary@;
+}
+
+QMenu {
+    background: @bg_card@;
+    border: 1px solid @stroke@;
+    border-radius: 8px;
+    padding: 6px;
+}
+QMenu::item {
+    background: transparent;
+    color: @text_secondary@;
+    padding: 6px 26px 6px 14px;
+    border-radius: 4px;
+}
+QMenu::item:selected {
+    background: @accent@;
+    color: @on_accent@;
+}
+QMenu::item:disabled {
+    color: @text_disabled@;
+}
+QMenu::separator {
+    height: 1px;
+    background: @stroke@;
+    margin: 6px 8px;
+}
+QMenu::indicator {
+    width: 14px;
+    height: 14px;
+    margin-left: 4px;
+}
+QMenu::indicator:non-exclusive:unchecked {
+    border: 1px solid @stroke_field@;
+    border-radius: 3px;
+    background: @bg_field@;
+}
+QMenu::indicator:non-exclusive:checked {
+    background: @accent@;
+    border: 1px solid @accent@;
+    border-radius: 3px;
+}
+
+QPushButton {
+    background: @bg_card@;
+    color: @text_primary@;
+    border: 1px solid @stroke@;
+    border-radius: 6px;
+    padding: 6px 16px;
+}
+QPushButton:hover {
+    background: @bg_card_hover@;
+    border-color: @text_disabled@;
+}
+QPushButton:pressed {
+    background: @nav_checked@;
+    border-color: @accent@;
+}
+QPushButton:disabled {
+    color: @text_disabled@;
+    border-color: @stroke@;
+}
+QPushButton:focus {
+    border-color: @accent@;
+}
+
+QPushButton#accentButton {
+    background: @accent@;
+    color: @on_accent@;
+    border: 1px solid @accent@;
+    font-weight: 600;
+}
+QPushButton#accentButton:hover {
+    background: @accent_hover@;
+    border-color: @accent_hover@;
+}
+QPushButton#accentButton:pressed {
+    background: @accent_pressed@;
+    border-color: @accent_pressed@;
+}
+
+/* Sidebar */
+#sidebar {
+    background: @bg_sidebar@;
+    border-right: 1px solid @stroke@;
+}
+QPushButton#navButton {
+    background: transparent;
+    border: none;
+    border-radius: 9px;
+    padding: 0;
+}
+QPushButton#navButton:hover {
+    background: @nav_hover@;
+}
+QPushButton#navButton:checked {
+    background: @nav_checked@;
+}
+QPushButton#navButton:disabled {
+    background: transparent;
+}
+
+/* Cards */
+QFrame#heroCard, QFrame[card="true"] {
+    background: @bg_card@;
+    border: 1px solid @stroke@;
+    border-radius: 10px;
+}
+QFrame#metricTile {
+    background: @bg_field@;
+    border: 1px solid @stroke_field@;
+    border-radius: 8px;
+}
+QFrame#sectionHeader {
+    background: transparent;
+    border: none;
+}
+
+DriveCard {
+    background: @bg_card@;
+    border: 1px solid @stroke@;
+    border-radius: 10px;
+    padding: 10px 14px 10px 12px;
+    text-align: left;
+}
+DriveCard:hover {
+    background: @bg_card_hover@;
+}
+DriveCard:checked {
+    background: @bg_card_hover@;
+    border: 1px solid @accent@;
+}
+DriveCard:disabled {
+    color: @text_disabled@;
+}
+
+QLabel#cardTitle {
+    font-size: 13px;
+    font-weight: 600;
+    color: @text_primary@;
+}
+QLabel#cardSub {
+    font-size: 11px;
+    color: @text_secondary@;
+}
+
+QLabel#heroTitle {
+    font-size: 21px;
+    font-weight: 700;
+    color: @text_primary@;
+}
+QLabel#heroSubtitle {
+    font-size: 13px;
+    color: @text_secondary@;
+}
+QLabel#fieldKey {
+    font-size: 11px;
+    font-weight: 600;
+    color: @text_secondary@;
+}
+QLabel#fieldValue {
+    font-size: 13px;
+    color: @text_primary@;
+}
+QLabel#sectionTitle {
+    font-size: 12px;
+    font-weight: 700;
+    color: @text_secondary@;
+}
+QLabel#metricKey {
+    font-size: 11px;
+    font-weight: 600;
+    color: @text_secondary@;
+}
+QLabel#metricValue {
+    font-size: 19px;
+    font-weight: 700;
+    color: @text_primary@;
+}
+
+QLineEdit {
+    background: @bg_field@;
+    border: 1px solid @stroke_field@;
+    border-radius: 6px;
+    padding: 5px 10px;
+    color: @text_primary@;
+    selection-background-color: @accent@;
+    selection-color: @on_accent@;
+}
+QLineEdit:disabled {
+    color: @text_secondary@;
+    background: @bg_base@;
+}
+
+QTableWidget {
+    background: @bg_card@;
+    alternate-background-color: @row_alt@;
+    border: 1px solid @stroke@;
+    border-radius: 8px;
+    gridline-color: @stroke@;
+    selection-background-color: @selection_bg@;
+    selection-color: @selection_fg@;
+}
+QTableWidget::item {
+    padding: 3px 10px;
+}
+QTableWidget::item:selected {
+    background: @selection_bg@;
+}
+QHeaderView {
+    background: @header_bg@;
+    border: none;
+}
+QHeaderView::section {
+    background: @header_bg@;
+    color: @text_secondary@;
+    border: none;
+    border-right: 1px solid @stroke@;
+    border-bottom: 1px solid @stroke@;
+    padding: 8px 10px;
+    font-size: 11px;
+    font-weight: 600;
+}
+QTableCornerButton::section {
+    background: @header_bg@;
+    border: none;
+}
+
+QScrollBar:vertical {
+    background: transparent;
+    width: 10px;
+    margin: 2px;
+}
+QScrollBar::handle:vertical {
+    background: @nav_checked@;
+    border-radius: 3px;
+    min-height: 32px;
+}
+QScrollBar::handle:vertical:hover {
+    background: @stroke@;
+}
+QScrollBar:horizontal {
+    background: transparent;
+    height: 10px;
+    margin: 2px;
+}
+QScrollBar::handle:horizontal {
+    background: @nav_checked@;
+    border-radius: 3px;
+    min-width: 32px;
+}
+QScrollBar::handle:horizontal:hover {
+    background: @stroke@;
+}
+QScrollBar::add-line, QScrollBar::sub-line {
+    height: 0px;
+    width: 0px;
+}
+QScrollBar::add-page, QScrollBar::sub-page {
+    background: transparent;
+}
+
+QToolTip {
+    background: @bg_card@;
+    color: @text_primary@;
+    border: 1px solid @stroke@;
+    border-radius: 4px;
+    padding: 6px 8px;
+}
+
+QMessageBox {
+    background: @bg_card@;
+}
+QMessageBox QLabel {
+    color: @text_primary@;
+    font-size: 13px;
+}
+
+QScrollArea {
+    background: transparent;
+    border: none;
+}
+QFrame#driveStrip {
+    background: transparent;
+    border: none;
+}

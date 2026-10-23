@@ -1,7 +1,10 @@
 #include "mainwindow.h"
 #include "asciiview.h"
+#include "theme.h"
 
 #include <QApplication>
+#include <QSettings>
+#include <QTimer>
 #include <QTranslator>
 #include <QLocale>
 #include <iostream>
@@ -41,6 +44,9 @@ int main(int argc, char *argv[])
 
     QApplication a(argc, argv);
 
+    QSettings startupSettings("qdiskinfo", "qdiskinfo");
+    Theme::apply(a, Theme::modeFromString(startupSettings.value("ui/mode", QStringLiteral("magician")).toString()));
+
     QTranslator translator;
     if (translator.load(QLocale(), QLatin1String("qdiskinfo"), QLatin1String("_"), QLatin1String(":/translations"))) {
         a.installTranslator(&translator);
@@ -49,5 +55,26 @@ int main(int argc, char *argv[])
     MainWindow w;
     w.setWindowIcon(QIcon(":/icons/icon.svg"));
     w.show();
+
+    // UI-review helper: QDISKINFO_SCREENSHOT=<path> renders offscreen-friendly
+    // (pair with QT_QPA_PLATFORM=offscreen), grabs the window once laid out and
+    // exits, so themes can be captured by scripts/CI.
+    const QByteArray screenshotPath = qgetenv("QDISKINFO_SCREENSHOT");
+    if (!screenshotPath.isEmpty()) {
+        const QString path = QString::fromLocal8Bit(screenshotPath);
+        // Optional runtime mode switch before grabbing, to exercise
+        // classic -> themed transitions in UI-review screenshots.
+        const QString switchTo = QString::fromLocal8Bit(qgetenv("QDISKINFO_SWITCH_TO"));
+        if (!switchTo.isEmpty()) {
+            QTimer::singleShot(500, &w, [&w, switchTo]() {
+                w.setUiMode(Theme::modeFromString(switchTo), true);
+            });
+        }
+        QTimer::singleShot(1200, &w, [&w, path]() {
+            w.grab().save(path);
+            QApplication::quit();
+        });
+    }
+
     return a.exec();
 }

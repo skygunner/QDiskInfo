@@ -3,6 +3,7 @@
 #include <QAbstractButton>
 #include <QApplication>
 #include <QDir>
+#include <QFile>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QMessageBox>
@@ -88,6 +89,20 @@ QString utils::getSmartctlOutput(const QStringList &arguments, bool root, bool i
 
 QPair<QStringList, QJsonArray> utils::scanDevices(bool initializing)
 {
+    // Development/UI-review escape hatch: QDISKINFO_DEMO=1 serves embedded
+    // fixture outputs instead of invoking smartctl, so the interface can be
+    // screenshotted without root or physical drives.
+    if (qEnvironmentVariableIsSet("QDISKINFO_DEMO")) {
+        QFile scanFile(QStringLiteral(":/fixtures/demo_scan.json"));
+        QFile nvmeFile(QStringLiteral(":/fixtures/demo_nvme.json"));
+        QFile ataFile(QStringLiteral(":/fixtures/demo_ata.json"));
+        if (scanFile.open(QIODevice::ReadOnly) && nvmeFile.open(QIODevice::ReadOnly) && ataFile.open(QIODevice::ReadOnly)) {
+            QStringList outputs = {QString::fromUtf8(nvmeFile.readAll()), QString::fromUtf8(ataFile.readAll())};
+            const QJsonDocument scanDoc = QJsonDocument::fromJson(scanFile.readAll());
+            return qMakePair(outputs, scanDoc.object()["devices"].toArray());
+        }
+    }
+
     QString output = getSmartctlOutput({"--scan", "--json"}, false, initializing);
     QJsonDocument doc = QJsonDocument::fromJson(output.toUtf8());
     QJsonObject jsonObj = doc.object();

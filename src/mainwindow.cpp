@@ -12,6 +12,9 @@
 #include <QUrl>
 #include <QTextEdit>
 #include <QDialogButtonBox>
+#include <QAbstractButton>
+#include <QMenuBar>
+#include <QVBoxLayout>
 
 const int PRECISION_TOTALS_TO_STR = 2;
 const int PRECISION_CAPACITY_TO_STR = 0;
@@ -100,6 +103,10 @@ MainWindow::MainWindow(QWidget *parent)
     gridView = new GridView(this);
     gridView->setWindowFlag(Qt::Window);
 
+    buildUiModePages();
+    createViewMenu();
+    setUiMode(Theme::modeFromString(settings.value("ui/mode", QStringLiteral("magician")).toString()), true);
+
     ui->actionIgnore_C4_Reallocation_Event_Count->setChecked(settings.value("IgnoreC4", true).toBool());
     ui->actionHEX->setChecked(settings.value("HEX", true).toBool());
     ui->actionUse_Fahrenheit->setChecked(settings.value("Fahrenheit", false).toBool());
@@ -144,10 +151,15 @@ MainWindow::MainWindow(QWidget *parent)
     if (INCLUDE_OPTIONAL_RESOURCES) {
         transformWindow();
     } else {
-        delete temperatureLabelHorizontal;
-        delete healthStatusLabelHorizontal;
-        delete temperatureValueHorizontal;
-        delete healthStatusValueHorizontal;
+        // These horizontal variants are unused without the optional theme
+        // resources. Deleting widgets that still sit in the .ui form layouts
+        // leaves dangling items behind after the layout re-parenting done by
+        // buildUiModePages() and crashes later layout passes (e.g. Save
+        // Image), so hide them instead.
+        temperatureLabelHorizontal->hide();
+        healthStatusLabelHorizontal->hide();
+        temperatureValueHorizontal->hide();
+        healthStatusValueHorizontal->hide();
     }
 
     mbSymbol = locale.formattedDataSize(1 << 20, 1, QLocale::DataSizeTraditionalFormat).split(' ')[1];
@@ -199,6 +211,7 @@ void MainWindow::updateUI(const QString &currentDeviceName)
     pbSymbol = locale.formattedDataSize(qint64(1) << 50, 1, QLocale::DataSizeTraditionalFormat).split(' ')[1];
 
     QVector<DiskItem> diskItems;
+    driveSlots.clear();
 
     bool firstTime = true;
     bool isFahrenheit = ui->actionUse_Fahrenheit->isChecked();
@@ -326,19 +339,26 @@ void MainWindow::updateUI(const QString &currentDeviceName)
             }
         }
 
+        QString healthState;
         if (healthPassed && !caution && !bad) {
             health = tr("Good");
             healthColor = goodColor;
+            healthState = QStringLiteral("ok");
         } else if (healthPassed && caution && !bad) {
             health = tr("Caution");
             healthColor = cautionColor;
+            healthState = QStringLiteral("warn");
         } else if ((bad || !healthPassed) && !modelName.isEmpty() && !smartStatusValue.isNull()){
             health = tr("Bad");
             healthColor = badColor;
+            healthState = QStringLiteral("bad");
         } else {
             health = tr("Unknown");
             healthColor = naColor;
+            healthState = QStringLiteral("na");
         }
+
+        driveSlots.append({deviceName, modelName, diskCapacityString, temperature, health, protocol, healthState});
 
         CustomButton *button = new CustomButton(health, temperature, deviceName, healthColor, this);
         button->setToolTip(tr("Disk") + " " + QString::number(i) + " : " +  modelName + " : " + diskCapacityString);
@@ -431,10 +451,15 @@ void MainWindow::updateUI(const QString &currentDeviceName)
     int activeIndex = deviceToSelect >= 0 ? deviceToSelect : 0;
     gridView->setActiveIndex(activeIndex);
     updateNavigationButtons(activeIndex);
+
+    const int stripIndex = static_cast<int>(buttonGroup->buttons().indexOf(buttonGroup->checkedButton()));
+    magicianView->setDriveSlots(driveSlots, stripIndex);
+    crystalView->setDrives(driveSlots, stripIndex);
 }
 
 void MainWindow::populateWindow(const QJsonObject &localObj, const QString &health, const QVector<QPair<QString, int>>& nvmeLogOrdered)
 {
+    summary = DiskSummary();
     QJsonArray attributes = localObj["ata_smart_attributes"].toObject()["table"].toArray();
     QJsonObject pollingMinutes = localObj["ata_smart_data"].toObject()["self_test"].toObject()["polling_minutes"].toObject();
     QJsonObject nvmeLog = localObj["nvme_smart_health_information_log"].toObject();
@@ -552,6 +577,15 @@ void MainWindow::populateWindow(const QJsonObject &localObj, const QString &heal
     protocolLineEdit->setText(protocol);
     deviceNodeLineEdit->setText(name);
 
+    summary.model = modelName;
+    summary.capacity = diskCapacityString;
+    summary.firmware = firmwareVersion;
+    summary.serial = serialNumber;
+    summary.type = type;
+    summary.protocol = protocol;
+    summary.node = name;
+    summary.temperature = temperatureInt;
+
     QStringList keys = pollingMinutes.keys();
     std::sort(keys.begin(), keys.end(), [&pollingMinutes](const QString& key1, const QString& key2) {
         return pollingMinutes[key1].toInt() < pollingMinutes[key2].toInt();
@@ -569,6 +603,7 @@ void MainWindow::populateWindow(const QJsonObject &localObj, const QString &heal
 
     rotationRateLineEdit->setText(rotationRate);
     rotationRateLineEdit->setAlignment(Qt::AlignRight);
+    summary.rotationRate = rotationRate;
 
     QString powerCycleCount;
     if (powerCycleCountInt >= 0) {
@@ -579,6 +614,7 @@ void MainWindow::populateWindow(const QJsonObject &localObj, const QString &heal
 
     powerOnCountLineEdit->setText(powerCycleCount);
     powerOnCountLineEdit->setAlignment(Qt::AlignRight);
+    summary.powerOnCount = powerCycleCount;
 
     int powerOnTimeInt = localObj["power_on_time"].toObject().value("hours").toInt(-1);
     QString powerOnTime;
@@ -590,6 +626,7 @@ void MainWindow::populateWindow(const QJsonObject &localObj, const QString &heal
 
     powerOnHoursLineEdit->setText(powerOnTime);
     powerOnHoursLineEdit->setAlignment(Qt::AlignRight);
+    summary.powerOnHours = powerOnTime;
 
     int logicalBlockSize = localObj["logical_block_size"].toInt();
     if (!isNvme) {
@@ -741,6 +778,15 @@ void MainWindow::populateWindow(const QJsonObject &localObj, const QString &heal
     totalReads = getMbToPrettyString(totalMbReadsI64, PRECISION_TOTALS_TO_STR, useGB);
     totalWrites = getMbToPrettyString(totalMbWritesI64, PRECISION_TOTALS_TO_STR, useGB);
 
+    summary.totalReads = totalReads;
+    summary.totalWrites = totalWrites;
+    QString percentDigits = percentage;
+    percentDigits.remove(QLatin1Char('%'));
+    percentDigits.remove(QLatin1Char(' '));
+    bool percentOk = false;
+    const int lifePercent = percentDigits.toInt(&percentOk);
+    summary.lifePercent = percentOk ? lifePercent : -1;
+
     totalReadsLineEdit->setText(totalReads);
     totalReadsLineEdit->setAlignment(Qt::AlignRight);
 
@@ -796,15 +842,23 @@ void MainWindow::populateWindow(const QJsonObject &localObj, const QString &heal
         healthStatusValueLabel = healthStatusValue;
     }
 
+    QColor temperatureStateColor;
+    QString temperatureState;
     if (temperatureInt > warningTemperature) { // TODO: Let the user set an alarm temp.
-        temperatureValueLabel->setStyleSheet("background-color: " + badColor.name() + ";");
+        temperatureStateColor = badColor;
+        temperatureState = QStringLiteral("bad");
     } else if ((temperatureInt < criticalTemperature) && (temperatureInt > warningTemperature)){
-        temperatureValueLabel->setStyleSheet("background-color: " + cautionColor.name() + ";");
+        temperatureStateColor = cautionColor;
+        temperatureState = QStringLiteral("warn");
     } else if (temperatureInt == 0) {
-        temperatureValueLabel->setStyleSheet("background-color: " + naColor.name() + ";");
+        temperatureStateColor = naColor;
+        temperatureState = QStringLiteral("na");
     } else {
-        temperatureValueLabel->setStyleSheet("background-color: " + goodColor.name() + ";");
+        temperatureStateColor = goodColor;
+        temperatureState = QStringLiteral("ok");
     }
+    summary.temperatureState = temperatureState;
+    temperatureValueLabel->setStyleSheet("background-color: " + temperatureStateColor.name() + ";");
 
     QString labelStyle = "font-size:12pt; font-weight:700; color:black";
 
@@ -821,13 +875,18 @@ void MainWindow::populateWindow(const QJsonObject &localObj, const QString &heal
 
     temperatureValueLabel->setAlignment(Qt::AlignCenter);
 
+    summary.health = health;
     if (health == tr("Bad")) {
+        summary.healthState = QStringLiteral("bad");
         healthStatusValueLabel->setStyleSheet("background-color: " + badColor.name() + ";");
-    } else if (health == tr("Caution")){
+    } else if (health == tr("Caution")) {
+        summary.healthState = QStringLiteral("warn");
         healthStatusValueLabel->setStyleSheet("background-color: " + cautionColor.name() + ";");
     } else if (health == tr("Good")) {
+        summary.healthState = QStringLiteral("ok");
         healthStatusValueLabel->setStyleSheet("background-color: " + goodColor.name() + ";");
     } else {
+        summary.healthState = QStringLiteral("na");
         healthStatusValueLabel->setStyleSheet("background-color: " + naColor.name() + ";");
     }
 
@@ -948,6 +1007,12 @@ void MainWindow::populateWindow(const QJsonObject &localObj, const QString &heal
             });
         }
     }
+
+    if (uiMode == UiMode::Magician) {
+        magicianView->applySummary(summary);
+    } else if (uiMode == UiMode::Crystal) {
+        crystalView->applySummary(summary);
+    }
 }
 
 void MainWindow::addSCSIErrorCounterLogTable(const QJsonObject &scsiErrorLog)
@@ -972,15 +1037,27 @@ void MainWindow::addSCSIErrorCounterLogTable(const QJsonObject &scsiErrorLog)
         "Total Uncorrected\nErrors"
     });
 
+    summary.table.headers = {QString(), QStringLiteral("Operation"),
+                              tr("Errors Corrected\nby ECC Fast"), tr("Errors Corrected\nby ECC Delayed"),
+                              tr("Errors Corrected\nby Rereads/Rewrites"), tr("Total Errors\nCorrected"),
+                              tr("Correction Algorithm\nInvocations"), tr("Gigabytes\nProcessed"),
+                              tr("Total Uncorrected\nErrors")};
+    summary.table.stretchColumn = 1;
+    summary.table.leftColumns = QList<int>();
+    summary.table.rightColumns = {2, 3, 4, 5, 6, 7, 8};
+
     int row = 0;
     for (const QString& operation : operations) {
         QColor statusColor;
         QJsonObject operationData = scsiErrorLog[operation].toObject();
 
+        QString rowState;
         if (operationData["total_uncorrected_errors"].toInt() == 0) {
             statusColor = goodColor;
+            rowState = QStringLiteral("ok");
         } else {
             statusColor = cautionColor;
+            rowState = QStringLiteral("warn");
         }
 
         QTableWidgetItem *statusItem = new QTableWidgetItem();
@@ -1005,6 +1082,15 @@ void MainWindow::addSCSIErrorCounterLogTable(const QJsonObject &scsiErrorLog)
         tableWidget->setItem(row, 6, new QTableWidgetItem(QString::number(operationData["correction_algorithm_invocations"].toInt())));
         tableWidget->setItem(row, 7, new QTableWidgetItem(operationData["gigabytes_processed"].toString()));
         tableWidget->setItem(row, 8, new QTableWidgetItem(QString::number(operationData["total_uncorrected_errors"].toInt())));
+
+        summary.table.rows.append({statusColor, rowState, {operationTranslated,
+                                                 QString::number(operationData["errors_corrected_by_eccfast"].toInt()),
+                                                 QString::number(operationData["errors_corrected_by_eccdelayed"].toInt()),
+                                                 QString::number(operationData["errors_corrected_by_rereads_rewrites"].toInt()),
+                                                 QString::number(operationData["total_errors_corrected"].toInt()),
+                                                 QString::number(operationData["correction_algorithm_invocations"].toInt()),
+                                                 operationData["gigabytes_processed"].toString(),
+                                                 QString::number(operationData["total_uncorrected_errors"].toInt())}});
 
         ++row;
 
@@ -1049,6 +1135,12 @@ void MainWindow::addNvmeLogTable(const QVector<QPair<QString, int>>& nvmeLogOrde
     tableWidget->verticalHeader()->setVisible(false);
     tableWidget->setItemDelegateForColumn(0, new StatusDot(tableWidget));
 
+    summary.table.headers = {QString(), tr("ID"), tr("Attribute Name"), tr("Raw Values")};
+    summary.table.stretchColumn = 2;
+    summary.table.leftColumns = {2};
+    summary.table.rightColumns = {3};
+    summary.table.rows.clear();
+
 
     tableWidget->horizontalHeaderItem(2)->setTextAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     tableWidget->horizontalHeaderItem(3)->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
@@ -1071,9 +1163,11 @@ void MainWindow::addNvmeLogTable(const QVector<QPair<QString, int>>& nvmeLogOrde
         }
 
         QColor statusColor;
+        QString rowState;
 
         if (id == "01" && rawInt) {
             statusColor = badColor;
+            rowState = QStringLiteral("bad");
             if (rawInt == 1) { // Still need to figure out if this is DEC or HEX in JSON
                 warningMessage = tr("Available spare capacity has fallen below the threshold"); // THX to CrystalDiskInfo for the messages
             } else if (rawInt == 2) {
@@ -1091,19 +1185,26 @@ void MainWindow::addNvmeLogTable(const QVector<QPair<QString, int>>& nvmeLogOrde
             int availableSpareThreshold = nvmeLogOrdered.at(3).second;
             if (availableSpareThreshold > 100) { // Thx to crystaldiskinfo for these workarounds
                 statusColor = goodColor;
+                rowState = QStringLiteral("ok");
             } else if (rawInt == 0 && availableSpareThreshold == 0) {
                 statusColor = goodColor;
+                rowState = QStringLiteral("ok");
             } else if (rawInt < availableSpareThreshold) {
                 statusColor = badColor;
+                rowState = QStringLiteral("bad");
             } else if (availableSpareThreshold != 100 && (rawInt == availableSpareThreshold)) {
                 statusColor = cautionColor;
+                rowState = QStringLiteral("warn");
             } else {
                 statusColor = goodColor;
+                rowState = QStringLiteral("ok");
             }
         } else if (id == "05" && rawInt >= 90) { // Make this configurable, currently hardcoded to 10%
             statusColor = cautionColor;
+            rowState = QStringLiteral("warn");
         } else {
             statusColor = goodColor;
+            rowState = QStringLiteral("ok");
         }
 
         QTableWidgetItem *statusItem = new QTableWidgetItem();
@@ -1121,6 +1222,8 @@ void MainWindow::addNvmeLogTable(const QVector<QPair<QString, int>>& nvmeLogOrde
         tableWidget->setItem(row, 1, idItem);
         tableWidget->setItem(row, 2, nameItem);
         tableWidget->setItem(row, 3, rawItem);
+
+        summary.table.rows.append({statusColor, rowState, {id, name, raw}});
 
         ++row;
     }
@@ -1153,6 +1256,12 @@ void MainWindow::addSmartAttributesTable(const QJsonArray &attributes)
     tableWidget->setHorizontalHeaderLabels({"", tr("ID"), tr("Attribute Name"), tr("Current"), tr("Worst"), tr("Threshold"), tr("Raw Values")});
     tableWidget->verticalHeader()->setVisible(false);
     tableWidget->setItemDelegateForColumn(0, new StatusDot(tableWidget));
+
+    summary.table.headers = {QString(), tr("ID"), tr("Attribute Name"), tr("Current"), tr("Worst"), tr("Threshold"), tr("Raw Values")};
+    summary.table.stretchColumn = 2;
+    summary.table.leftColumns = {2};
+    summary.table.rightColumns = {3, 4, 5, 6};
+    summary.table.rows.clear();
 
     for (int i = 0; i < tableWidget->columnCount(); ++i) {
         QTableWidgetItem *headerItem = tableWidget->horizontalHeaderItem(i);
@@ -1188,12 +1297,16 @@ void MainWindow::addSmartAttributesTable(const QJsonArray &attributes)
         }
 
         QColor statusColor;
+        QString rowState;
         if (thresh && (value < thresh)) {
             statusColor = badColor;
+            rowState = QStringLiteral("bad");
         } else if ((id == "05" || id == "C5" || id == "C6" || (id == "C4" && !(ui->actionIgnore_C4_Reallocation_Event_Count->isChecked()))) && (rawHEX != "000000000000")) {
             statusColor = cautionColor;
+            rowState = QStringLiteral("warn");
         } else {
             statusColor = goodColor;
+            rowState = QStringLiteral("ok");
         }
 
         QTableWidgetItem *statusItem = new QTableWidgetItem();
@@ -1228,6 +1341,10 @@ void MainWindow::addSmartAttributesTable(const QJsonArray &attributes)
         tableWidget->setItem(row, 4, worstItem);
         tableWidget->setItem(row, 5, threshItem);
         tableWidget->setItem(row, 6, rawItem);
+
+        summary.table.rows.append({statusColor, rowState, {id, name, QString::number(value), QString::number(worst),
+                                                 QString::number(thresh),
+                                                 ui->actionHEX->isChecked() ? rawHEX : rawString}});
 
         ++row;
     }
@@ -1518,4 +1635,132 @@ QString MainWindow::getMbToPrettyString(const int64_t &sizeInMbI64, const int &p
     else if (sizeInMbI64 < 1000000000)
         return QString::number(sizeInMB/1e6, 'f', precision) + " " + tbSymbol;
     return QString::number(sizeInMB/1e9, 'f', precision) + " " + pbSymbol;
+}
+
+void MainWindow::buildUiModePages()
+{
+    // Park the .ui-built layout on its own page so the themed views can sit
+    // next to it and switching modes is pure visibility toggling.
+    classicPage = new QWidget(this);
+    QVBoxLayout *classicLayout = new QVBoxLayout(classicPage);
+    classicLayout->setContentsMargins(0, 0, 0, 0);
+    // takeAt() detaches the grid from the window layout, then addLayout() —
+    // unlike addItem() — adopts it and re-parents its child widgets onto
+    // classicPage. With addItem() the widgets stayed children of the central
+    // widget and remained visible behind the themed views once the page was
+    // hidden.
+    ui->horizontalLayout_2->takeAt(0);
+    classicLayout->addLayout(gridLayout);
+
+    ui->horizontalLayout_2->setContentsMargins(0, 0, 0, 0);
+    ui->horizontalLayout_2->setSpacing(0);
+    ui->horizontalLayout_2->addWidget(classicPage);
+
+    magicianView = new MagicianView(this);
+    crystalView = new CrystalView(this);
+    ui->horizontalLayout_2->addWidget(magicianView);
+    ui->horizontalLayout_2->addWidget(crystalView);
+
+    const auto clickHiddenDriveButton = [this](int index) {
+        const QList<QAbstractButton *> buttons = buttonGroup->buttons();
+        if (index >= 0 && index < buttons.size()) {
+            buttons.at(index)->click();
+        }
+    };
+    connect(magicianView, &MagicianView::driveClicked, this, clickHiddenDriveButton);
+    connect(crystalView, &CrystalView::driveClicked, this, clickHiddenDriveButton);
+    connect(magicianView, &MagicianView::navigateRequested, this, [this](int delta) {
+        if (delta >= 0) {
+            onNextButtonClicked();
+        } else {
+            onPrevButtonClicked();
+        }
+    });
+    connect(magicianView, &MagicianView::refreshRequested, this, &MainWindow::on_actionRescan_Refresh_triggered);
+    connect(magicianView, &MagicianView::gridRequested, this, &MainWindow::on_actionGrid_View_triggered);
+}
+
+void MainWindow::createViewMenu()
+{
+    QMenu *menuView = menuBar()->addMenu(tr("&View"));
+    actionMagician_Style = new QAction(tr("&Magician Style"), this);
+    actionCrystal_Style = new QAction(tr("&Crystal Style"), this);
+    actionClassic_Style = new QAction(tr("&Classic Style"), this);
+
+    QActionGroup *styleGroup = new QActionGroup(this);
+    const QList<QAction*> styleActions = {actionMagician_Style, actionCrystal_Style, actionClassic_Style};
+    for (QAction *action : styleActions) {
+        action->setCheckable(true);
+        styleGroup->addAction(action);
+        menuView->addAction(action);
+    }
+    menuBar()->insertMenu(ui->menuHelp->menuAction(), menuView);
+
+    connect(actionMagician_Style, &QAction::toggled, this, &MainWindow::onMagicianStyleToggled);
+    connect(actionCrystal_Style, &QAction::toggled, this, &MainWindow::onCrystalStyleToggled);
+    connect(actionClassic_Style, &QAction::toggled, this, &MainWindow::onClassicStyleToggled);
+}
+
+void MainWindow::setUiMode(UiMode mode, bool resizeWindow)
+{
+    uiMode = mode;
+    settings.setValue("ui/mode", Theme::modeToString(mode));
+    Theme::apply(*qApp, mode);
+
+    classicPage->setVisible(mode == UiMode::Classic);
+    magicianView->setVisible(mode == UiMode::Magician);
+    crystalView->setVisible(mode == UiMode::Crystal);
+
+    actionMagician_Style->setChecked(mode == UiMode::Magician);
+    actionCrystal_Style->setChecked(mode == UiMode::Crystal);
+    actionClassic_Style->setChecked(mode == UiMode::Classic);
+
+    int stripIndex = 0;
+    if (buttonGroup && buttonGroup->checkedButton()) {
+        stripIndex = static_cast<int>(buttonGroup->buttons().indexOf(buttonGroup->checkedButton()));
+        if (stripIndex < 0) {
+            stripIndex = 0;
+        }
+    }
+    magicianView->setDriveSlots(driveSlots, stripIndex);
+    crystalView->setDrives(driveSlots, stripIndex);
+    if (mode == UiMode::Magician) {
+        magicianView->applySummary(summary);
+    } else if (mode == UiMode::Crystal) {
+        crystalView->applySummary(summary);
+    }
+
+    if (resizeWindow) {
+        if (mode == UiMode::Magician) {
+            setMinimumSize(1020, 700);
+            resize(1200, 820);
+        } else if (mode == UiMode::Crystal) {
+            setMinimumSize(900, 660);
+            resize(1120, 840);
+        } else {
+            setMinimumSize(400, 300);
+            resize(800, 600);
+        }
+    }
+}
+
+void MainWindow::onMagicianStyleToggled(bool checked)
+{
+    if (checked && uiMode != UiMode::Magician) {
+        setUiMode(UiMode::Magician, true);
+    }
+}
+
+void MainWindow::onCrystalStyleToggled(bool checked)
+{
+    if (checked && uiMode != UiMode::Crystal) {
+        setUiMode(UiMode::Crystal, true);
+    }
+}
+
+void MainWindow::onClassicStyleToggled(bool checked)
+{
+    if (checked && uiMode != UiMode::Classic) {
+        setUiMode(UiMode::Classic, true);
+    }
 }

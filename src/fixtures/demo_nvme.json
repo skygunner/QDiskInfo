@@ -1,0 +1,96 @@
+{
+  "json_format_version" : [ 1, 0 ],
+  "smartctl" : {
+    "exit_status" : 0,
+    "output" : [
+      "smartctl 7.5 2025-04-30 r5714 [x86_64-linux-6.18.52] (local build)",
+      "Copyright (C) 2002-23, Bruce Allen, Christian Franke, www.smartmontools.org",
+      "=== START OF INFORMATION SECTION ===",
+      "Model Number:                       Samsung SSD 990 PRO 2TB",
+      "Serial Number:                      S6Z1NJ0R512345N",
+      "Firmware Version:                   4B2QGXA7",
+      "PCI Vendor/Subsystem ID:            0x144d",
+      "IEEE OUI Identifier:                0x002538",
+      "Controller ID:                      1",
+      "NVMe Version:                       2.0",
+      "Number of Namespaces:               1",
+      "Namespace 1 Size/Capacity:          2,000,398,934,016",
+      "Namespace 1 Formatted LBA Size:     512",
+      "Local Time is:                      Tue Sep 23 10:00:00 2026 CST",
+      "Firmware Updates (0x14):            2 Slots, no Reset required",
+      "Optional Admin Commands:            Format Security Frmw_DL Self_Test NS_Mngmt",
+      "Optional NVM Commands:              Comp WrUnc DSMngmt WrZero Sav/Sel_Feat Timestmp Verify",
+      "Log Page Zero Supported:            Yes",
+      "Maximum Data Transfer Size:         512 Pages",
+      "Warning  Comp. Temp. Threshold:     70 Celsius",
+      "Critical Comp. Temp. Threshold:     75 Celsius",
+      "Namespace 1 Features (0x04):        Thin Provisioning Supported"
+    ]
+  },
+  "device" : {
+    "name" : "/dev/nvme0",
+    "info_name" : "/dev/nvme0 [NVMe]",
+    "type" : "nvme",
+    "protocol" : "NVMe"
+  },
+  "model_name" : "Samsung SSD 990 PRO 2TB",
+  "serial_number" : "S6Z1NJ0R512345N",
+  "firmware_version" : "4B2QGXA7",
+  "nvme_ieee_oui_identifier" : 152376,
+  "nvme_controller_id" : 1,
+  "nvme_number_of_namespaces" : 1,
+  "nvme_namespaces" : [
+    {
+      "id" : 1,
+      "size" : 3907029168,
+      "capacity" : 3907029168,
+      "utilization" : 3907029168,
+      "formatted_lba_size" : 512,
+      "eui64" : {
+        "oui" : 152376,
+        "ext_id" : 123456789
+      }
+    }
+  ],
+  "user_capacity" : {
+    "blocks" : 3907029168,
+    "bytes" : 2000398934016
+  },
+  "logical_block_size" : 512,
+  "smart_status" : {
+    "passed" : true,
+    "nvme" : {
+      "value" : 0
+    }
+  },
+  "temperature" : {
+    "current" : 41,
+    "power_cycle_min" : 21,
+    "power_cycle_max" : 52,
+    "drive_trip" : 75
+  },
+  "power_cycle_count" : 571,
+  "power_on_time" : {
+    "hours" : 4210
+  },
+  "nvme_smart_health_information_log" : {
+    "critical_warning" : 0,
+    "temperature" : 41,
+    "available_spare" : 100,
+    "available_spare_threshold" : 10,
+    "percentage_used" : 3,
+    "data_units_read" : 656250,
+    "data_units_written" : 2929687,
+    "host_reads" : 9241822,
+    "host_writes" : 61235541,
+    "controller_busy_time" : 930,
+    "power_cycles" : 571,
+    "power_on_time" : 4210,
+    "unsafe_shutdowns" : 23,
+    "media_errors" : 0,
+    "num_err_log_entries" : 42,
+    "warning_temp_time" : 0,
+    "critical_comp_time" : 0
+  },
+  "nvme_self_test_log" : { }
+}

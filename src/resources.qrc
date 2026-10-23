@@ -6,4 +6,16 @@
         <file alias="Disk_Caution.svg">../dist/status/Disk_Caution.svg</file>
         <file alias="Disk_Unknown.svg">../dist/status/Disk_Unknown.svg</file>
     </qresource>
+    <qresource prefix="/theme">
+        <file alias="magician.qss">theme/magician.qss</file>
+        <file alias="crystal.qss">theme/crystal.qss</file>
+        <file alias="icons/drive.svg">theme/icons/drive.svg</file>
+        <file alias="icons/grid.svg">theme/icons/grid.svg</file>
+        <file alias="icons/refresh.svg">theme/icons/refresh.svg</file>
+    </qresource>
+    <qresource prefix="/fixtures">
+        <file alias="demo_scan.json">fixtures/demo_scan.json</file>
+        <file alias="demo_nvme.json">fixtures/demo_nvme.json</file>
+        <file alias="demo_ata.json">fixtures/demo_ata.json</file>
+    </qresource>
 </RCC>
