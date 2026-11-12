@@ -3,6 +3,8 @@
 #include "theme.h"
 
 #include <QApplication>
+#include <QFile>
+#include <QJsonDocument>
 #include <QSettings>
 #include <QTimer>
 #include <QTranslator>
@@ -13,6 +15,14 @@
 
 int main(int argc, char *argv[])
 {
+    if (argc == 3 && QString::fromLocal8Bit(argv[1]) == "--scan-helper") {
+        QCoreApplication helper(argc, argv);
+        if (geteuid() != 0) {
+            return 1;
+        }
+        return utils::runScanHelper(QString::fromLocal8Bit(argv[2]));
+    }
+
     bool isHeadless = false;
     QString devicePath;
 

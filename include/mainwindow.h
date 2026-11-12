@@ -83,7 +83,7 @@ private:
     QColor goodColor, cautionColor, badColor, naColor;
     QLabel *statusLabel;
     QJsonObject deviceJson;
-    QSpacerItem *buttonStretch;
+    QSpacerItem *buttonStretch = nullptr;
     QAction *actionCyclic_Navigation;
     QMenu *menuDevice;
     QMenu *menuDisk;
@@ -92,6 +92,8 @@ private:
     QActionGroup *disksGroup;
     QJsonArray devices;
     QStringList deviceOutputs;
+    int scanCompleted = 0;
+    int scanFailed = 0;
     QJsonObject globalObj;
     QString globalHealth;
     bool globalIsNvme;

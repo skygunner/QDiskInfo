@@ -11,18 +11,79 @@
 #include <QPushButton>
 #include <QTimer>
 #include <qactiongroup.h>
+#include <QElapsedTimer>
+#include <poll.h>
+#include <signal.h>
+#include <unistd.h>
+
+utils::utils(QObject *parent) : QObject(parent), scanProcess(std::make_unique<QProcess>())
+{
+    connect(scanProcess.get(), &QProcess::readyReadStandardOutput, this, &utils::readScanOutput);
+    connect(scanProcess.get(), &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
+        if (error == QProcess::FailedToStart) {
+            scanning = false;
+            emit scanFinished(scanProcess->errorString());
+        }
+    });
+    connect(scanProcess.get(), qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this,
+            [this](int exitCode, QProcess::ExitStatus status) {
+        readScanOutput();
+        scanning = false;
+        if (exitCode == 126 || exitCode == 127) {
+            scanError = tr("QDiskInfo needs root access in order to read S.M.A.R.T. data!");
+        } else if (scanError.isEmpty() && (status != QProcess::NormalExit || exitCode != 0 || !receivedDevices)) {
+            scanError = tr("Disk scan failed: %1").arg(QString::fromUtf8(scanProcess->readAllStandardError()));
+        }
+        emit scanFinished(scanError);
+    });
+}
+
+utils::~utils()
+{
+    stopScan();
+}
+
+void utils::stopScan()
+{
+    if (!scanProcess) {
+        return;
+    }
+    QProcess *process = scanProcess.get();
+    disconnect(process, nullptr, this, nullptr);
+    scanning = false;
+    // The GUI cannot signal a process after pkexec changes its credentials.
+    // EOF asks the privileged helper to stop its own child instead. Never
+    // destroy a running QProcess here: its destructor waits for that root pid.
+    if (process->state() != QProcess::NotRunning) {
+        connect(process, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), process, &QObject::deleteLater);
+        connect(process, &QProcess::errorOccurred, process, [process](QProcess::ProcessError error) {
+            if (error == QProcess::FailedToStart) {
+                process->deleteLater();
+            }
+        });
+        process->closeWriteChannel();
+        scanProcess.release();
+    } else {
+        scanProcess.reset();
+    }
+}
 
 QString utils::clearButtonGroup(QButtonGroup* buttonGroup, QHBoxLayout* horizontalLayout, QSpacerItem* buttonStretch, QMenu* menuDisk)
 {
-    QString currentDeviceName = buttonGroup->checkedButton()->property("deviceName").toString();
+    QString currentDeviceName;
+    if (buttonGroup->checkedButton()) {
+        currentDeviceName = buttonGroup->checkedButton()->property("deviceName").toString();
+    }
 
     QList<QAbstractButton*> buttons = buttonGroup->buttons();
     for (QAbstractButton* button : std::as_const(buttons)) {
         buttonGroup->removeButton(button);
         delete button;
     }
-    horizontalLayout->removeItem(buttonStretch);
-    delete buttonStretch;
+    if (buttonStretch) {
+        horizontalLayout->removeItem(buttonStretch);
+        delete buttonStretch;
+    }
 
     // Dirty hack to remove only the radio buttons
     QList<QAction*> actions = menuDisk->actions();
@@ -55,138 +116,267 @@ QString utils::getSmartctlPath() {
     return QString();
 }
 
-QString utils::getSmartctlOutput(const QStringList &arguments, bool root, bool initializing)
+void utils::scanDevices()
 {
-    QProcess process;
-    QString command;
-
-    if (root) {
-        command = "pkexec";
-    } else {
-        command = getSmartctlPath();
+    if (scanning || !scanProcess) {
+        return;
     }
+    scanning = true;
+    receivedDevices = false;
+    scanBuffer.clear();
+    scanError.clear();
 
-    if (!getSmartctlPath().isEmpty()) {
-        process.start(command, arguments);
-        process.waitForFinished(-1);
-    }
-
-    if (process.exitCode() == 126 || process.exitCode() == 127) {
-        QMessageBox::critical(nullptr, QObject::tr("QDiskInfo Error"), QObject::tr("QDiskInfo needs root access in order to read S.M.A.R.T. data!"));
-        if (initializing) {
-            QTimer::singleShot(0, qApp, &QApplication::quit);
-        }
-        return QString();
-    }
-
-    if (process.isOpen()) {
-        return process.readAllStandardOutput();
-    } else {
-        return QString();
-    }
-}
-
-
-QPair<QStringList, QJsonArray> utils::scanDevices(bool initializing)
-{
-    // Development/UI-review escape hatch: QDISKINFO_DEMO=1 serves embedded
-    // fixture outputs instead of invoking smartctl, so the interface can be
-    // screenshotted without root or physical drives.
     if (qEnvironmentVariableIsSet("QDISKINFO_DEMO")) {
-        QFile scanFile(QStringLiteral(":/fixtures/demo_scan.json"));
-        QFile nvmeFile(QStringLiteral(":/fixtures/demo_nvme.json"));
-        QFile ataFile(QStringLiteral(":/fixtures/demo_ata.json"));
-        if (scanFile.open(QIODevice::ReadOnly) && nvmeFile.open(QIODevice::ReadOnly) && ataFile.open(QIODevice::ReadOnly)) {
-            QStringList outputs = {QString::fromUtf8(nvmeFile.readAll()), QString::fromUtf8(ataFile.readAll())};
-            const QJsonDocument scanDoc = QJsonDocument::fromJson(scanFile.readAll());
-            return qMakePair(outputs, scanDoc.object()["devices"].toArray());
+        QTimer::singleShot(0, this, [this]() {
+            QFile scanFile(QStringLiteral(":/fixtures/demo_scan.json"));
+            if (!scanFile.open(QIODevice::ReadOnly)) {
+                scanning = false;
+                emit scanFinished(tr("Unable to read demo devices"));
+                return;
+            }
+            const QJsonArray devices = QJsonDocument::fromJson(scanFile.readAll()).object()["devices"].toArray();
+            emit devicesFound(devices);
+            const QStringList fixtures = {QStringLiteral(":/fixtures/demo_nvme.json"), QStringLiteral(":/fixtures/demo_ata.json")};
+            for (int i = 0; i < fixtures.size(); ++i) {
+                QFile file(fixtures[i]);
+                const bool opened = file.open(QIODevice::ReadOnly);
+                emit deviceReady(i, devices[i].toObject(), opened ? QString::fromUtf8(file.readAll()) : QString(),
+                                 opened ? QString() : file.errorString());
+            }
+            scanning = false;
+            emit scanFinished(QString());
+        });
+        return;
+    }
+
+    const QString smartctlPath = getSmartctlPath();
+    if (smartctlPath.isEmpty()) {
+        scanning = false;
+        emit scanFinished(tr("smartctl was not found, please install it!"));
+        return;
+    }
+    // One pkexec invocation covers enumeration, all reads and protocol fallbacks.
+    scanProcess->start("pkexec", {QCoreApplication::applicationFilePath(), "--scan-helper", smartctlPath});
+}
+
+void utils::readScanOutput()
+{
+    scanBuffer.append(scanProcess->readAllStandardOutput());
+    int end;
+    while ((end = static_cast<int>(scanBuffer.indexOf('\n'))) >= 0) {
+        const QJsonDocument doc = QJsonDocument::fromJson(scanBuffer.left(end));
+        scanBuffer.remove(0, end + 1);
+        if (!doc.isObject()) {
+            scanError = tr("Invalid response from disk scan");
+            continue;
+        }
+        const QJsonObject record = doc.object();
+        if (record.contains("devices")) {
+            receivedDevices = true;
+            emit devicesFound(record["devices"].toArray());
+        } else if (record.contains("index")) {
+            emit deviceReady(record["index"].toInt(), record["device"].toObject(), record["output"].toString(), record["error"].toString());
+        } else if (record.contains("error")) {
+            scanError = record["error"].toString();
         }
     }
-
-    QString output = getSmartctlOutput({"--scan", "--json"}, false, initializing);
-    QJsonDocument doc = QJsonDocument::fromJson(output.toUtf8());
-    QJsonObject jsonObj = doc.object();
-    QJsonArray devices = jsonObj["devices"].toArray();
-    QString smartctlPath = getSmartctlPath();
-    QStringList commandList;
-    QStringList deviceOutputs;
-
-    for (const QJsonValue &value : std::as_const(devices)) {
-        QJsonObject device = value.toObject();
-        QString deviceName = device["name"].toString();
-        commandList.append((smartctlPath + " -x --json=o %1").arg(deviceName));
-    }
-    QString command = commandList.join(" ; ");
-
-    if (smartctlPath.isEmpty()) {
-        QMessageBox::critical(nullptr, QObject::tr("QDiskInfo Error"), QObject::tr("smartctl was not found, please install it!"));
-        QTimer::singleShot(0, qApp, &QApplication::quit);
-    }
-
-    QString allDevicesOutput = getSmartctlOutput({"sh", "-c", command}, true, initializing);
-
-    qsizetype startIndex = 0;
-    qsizetype endIndex = 0;
-
-    static const QRegularExpression regex("\\}\\n\\{");
-
-    while ((endIndex = allDevicesOutput.indexOf(regex, static_cast<int>(startIndex))) != -1) {
-        ++endIndex;
-        QString jsonFragment = allDevicesOutput.mid(static_cast<int>(startIndex), static_cast<int>(endIndex - startIndex));
-        deviceOutputs.append(jsonFragment);
-        startIndex = endIndex;
-    }
-
-    if (startIndex < allDevicesOutput.size()) {
-        QString jsonFragment = allDevicesOutput.mid(static_cast<int>(startIndex));
-        deviceOutputs.append(jsonFragment);
-    }
-
-    if (!allDevicesOutput.isEmpty()) {
-        return QPair<QStringList, QJsonArray>(deviceOutputs, devices);
-    } else {
-        return QPair<QStringList, QJsonArray>(QStringList(), QJsonArray());
-    }
 }
 
-QString utils::initiateSelfTest(const QString &testType, const QString &deviceNode)
+namespace {
+QString readSmartctl(const QString &path, const QStringList &arguments, int timeoutMs, QString &error,
+                     const std::function<bool()> &cancelled, int &exitStatus)
 {
-    QProcess process;
-    QString command = getSmartctlPath();
-    QStringList arguments;
-    arguments << command << "--json=o" << "-x" << "-t" << testType << deviceNode;
-
-    process.start("pkexec", arguments);
-    process.waitForFinished(-1);
-
-    if (process.isOpen()) {
-        return process.readAllStandardOutput();
-    } else {
+    auto process = std::make_unique<QProcess>();
+    QElapsedTimer elapsed;
+    elapsed.start();
+    process->start(path, arguments);
+    while (process->state() != QProcess::NotRunning) {
+        if (cancelled && cancelled()) {
+            error = QObject::tr("Disk scan cancelled");
+            break;
+        }
+        if (elapsed.elapsed() >= timeoutMs) {
+            error = QObject::tr("S.M.A.R.T. read timed out");
+            break;
+        }
+        process->waitForFinished(25);
+    }
+    if (!error.isEmpty()) {
+        // This runs inside the privileged helper, so it can kill smartctl.
+        process->kill();
+        if (!process->waitForFinished(1000) && process->state() != QProcess::NotRunning) {
+            // A kernel I/O wait may resist SIGKILL. Do not let QProcess's
+            // destructor block the helper, or issue any more reads in it.
+            QObject::connect(process.get(), qOverload<int, QProcess::ExitStatus>(&QProcess::finished), process.get(), &QObject::deleteLater);
+            process.release();
+            exitStatus = -1;
+            return QString();
+        }
         return QString();
     }
+    const QByteArray output = process->readAllStandardOutput();
+    const QJsonDocument doc = QJsonDocument::fromJson(output);
+    const int status = process->exitCode() | doc.object()["smartctl"].toObject()["exit_status"].toInt();
+    exitStatus = status;
+    // Health/log warnings are data; bits 0 and 1 indicate invocation/open errors.
+    if (process->exitStatus() != QProcess::NormalExit || (status & 3) != 0 || !doc.isObject()) {
+        error = QObject::tr("Unable to read S.M.A.R.T. data: %1").arg(QString::fromUtf8(process->readAllStandardError()));
+        return QString();
+    }
+    return QString::fromUtf8(output);
+}
 }
 
-void utils::cancelSelfTest(const QString &deviceNode)
+int utils::runScanHelper(const QString &smartctlPath)
+{
+    // A broken output pipe must become cancellation, not kill the helper
+    // before it has stopped the SMART child it owns.
+    signal(SIGPIPE, SIG_IGN);
+    QFile output;
+    if (!output.open(stdout, QIODevice::WriteOnly)) {
+        return 1;
+    }
+    bool disconnected = false;
+    const auto cancelled = [&disconnected]() {
+        pollfd input = {STDIN_FILENO, POLLIN, 0};
+        if (poll(&input, 1, 0) > 0) {
+            char byte;
+            if ((input.revents & (POLLHUP | POLLERR | POLLNVAL)) != 0
+                    || ((input.revents & POLLIN) != 0 && read(STDIN_FILENO, &byte, 1) <= 0)) {
+                disconnected = true;
+            }
+        }
+        return disconnected;
+    };
+    return scanDevices(smartctlPath, [&output, &disconnected](const QJsonObject &record) {
+        if (output.write(QJsonDocument(record).toJson(QJsonDocument::Compact) + '\n') < 0 || !output.flush()) {
+            disconnected = true;
+        }
+    }, 20000, cancelled);
+}
+
+int utils::scanDevices(const QString &smartctlPath, const std::function<void(const QJsonObject &)> &report,
+                       int timeoutMs, const std::function<bool()> &cancelled)
+{
+    if (cancelled && cancelled()) {
+        return 1;
+    }
+    QString error;
+    int commandStatus = 0;
+    const QString scanOutput = readSmartctl(smartctlPath, {"--scan", "--json"}, timeoutMs, error, cancelled, commandStatus);
+    if (!error.isEmpty()) {
+        report({{"error", error}});
+        return 1;
+    }
+    const QJsonObject scan = QJsonDocument::fromJson(scanOutput.toUtf8()).object();
+    if (scan.contains("devices") && !scan["devices"].isArray()) {
+        report({{"error", QObject::tr("Invalid device list from smartctl")}});
+        return 1;
+    }
+    const QJsonArray devices = scan["devices"].toArray();
+    report({{"devices", devices}});
+    for (int i = 0; i < devices.size(); ++i) {
+        QJsonObject device = devices[i].toObject();
+        const QString detectedType = device["type"].toString();
+        QStringList types = {detectedType};
+        if (detectedType.startsWith("sntjmicron")) {
+            types.prepend("sat,12");
+        }
+        QString output;
+        QStringList errors;
+        for (const QString &type : std::as_const(types)) {
+            if (cancelled && cancelled()) {
+                return 1;
+            }
+            // Use the verified basic SAT read for ambiguous JMicron bridges.
+            // Preserve extended data for every other transport, including NVMe.
+            const QString readMode = detectedType.startsWith("sntjmicron") && type == "sat,12" ? "-a" : "-x";
+            QStringList arguments = {readMode, "--json=o"};
+            if (!type.isEmpty()) {
+                arguments << "-d" << type;
+            }
+            arguments << device["name"].toString();
+            error.clear();
+            commandStatus = 0;
+            output = readSmartctl(smartctlPath, arguments, timeoutMs, error, cancelled, commandStatus);
+            if (commandStatus < 0 || (cancelled && cancelled())) {
+                return 1;
+            }
+            const QJsonObject data = QJsonDocument::fromJson(output.toUtf8()).object();
+            // Command errors without any SMART payload do not establish a working type.
+            const bool hasSmartData = data.contains("smart_status") || data.contains("ata_smart_attributes")
+                    || data.contains("nvme_smart_health_information_log") || data.contains("scsi_error_counter_log");
+            bool validAtaAttributes = false;
+            const QJsonArray attributes = data["ata_smart_attributes"].toObject()["table"].toArray();
+            for (const QJsonValue &value : attributes) {
+                const QJsonObject attribute = value.toObject();
+                const int id = attribute["id"].toInt();
+                if (id > 0 && id <= 255 && attribute["value"].isDouble()
+                        && attribute["raw"].toObject()["value"].isDouble()) {
+                    validAtaAttributes = true;
+                    break;
+                }
+            }
+            // SAT must prove that it read ATA SMART, not merely identify a
+            // bridge or report smart_status from a different protocol. Bits
+            // 0..2 are command failures; health/history bits 3..7 remain valid.
+            const bool validSat = type != "sat,12" || ((commandStatus & 7) == 0
+                    && data["device"].toObject()["protocol"].toString() == "ATA" && validAtaAttributes);
+            if (!output.isEmpty() && hasSmartData && validSat) {
+                device["type"] = type;
+                device["protocol"] = data["device"].toObject()["protocol"];
+                break;
+            }
+            output.clear();
+            errors.append(type + ": " + (error.isEmpty() ? QObject::tr("No S.M.A.R.T. data returned") : error));
+        }
+        report({{"index", i}, {"device", device}, {"output", output},
+                {"error", output.isEmpty() ? errors.join("; ") : QString()}});
+    }
+    return 0;
+}
+
+QString utils::initiateSelfTest(const QString &testType, const QString &deviceNode, const QString &deviceType)
+{
+    QStringList arguments = {getSmartctlPath(), "--json=o", "-t", testType};
+    if (!deviceType.isEmpty()) {
+        arguments << "-d" << deviceType;
+    }
+    arguments << deviceNode;
+    QProcess process;
+    process.start("pkexec", arguments);
+    // Preserve the original authorization wait. A GUI-side deadline includes
+    // authentication and cannot kill smartctl once pkexec becomes root.
+    process.waitForFinished(-1);
+    return QString::fromUtf8(process.readAllStandardOutput());
+}
+
+void utils::cancelSelfTest(const QString &deviceNode, const QString &deviceType)
 {
     QProcess process;
     QString command = getSmartctlPath();
     QStringList arguments;
-    arguments << command << "-X" << deviceNode;
+    arguments << command << "-X";
+    if (!deviceType.isEmpty()) {
+        arguments << "-d" << deviceType;
+    }
+    arguments << deviceNode;
 
     process.start("pkexec", arguments);
+    // As with start, authorization is not a disk-command timeout.
     process.waitForFinished(-1);
 
     if (process.exitCode() == 126 || process.exitCode() == 127) {
         QMessageBox::critical(nullptr, QObject::tr("QDiskInfo Error"), QObject::tr("QDiskInfo needs root access in order to abort a self-test!"));
-    } else if (process.exitCode() == QProcess::NormalExit) {
+    } else if (process.exitStatus() == QProcess::NormalExit && process.exitCode() == 0) {
         QMessageBox::information(nullptr, QObject::tr("Test Requested"), QObject::tr("The self-test has been aborted"));
     } else {
         QMessageBox::critical(nullptr, QObject::tr("QDiskInfo Error"), QObject::tr("Error: Something went wrong"));
     }
 }
 
-void utils::selfTestHandler(const QString &mode, const QString &name, const QString &minutes) {
-    QString output = initiateSelfTest(mode, name);
+void utils::selfTestHandler(const QString &mode, const QString &name, const QString &minutes, const QString &deviceType) {
+    QString output = initiateSelfTest(mode, name, deviceType);
     if (output.isEmpty()) {
         QMessageBox::critical(nullptr, QObject::tr("QDiskInfo Error"), QObject::tr("QDiskInfo needs root access in order to request a self-test!"));
     } else {
@@ -222,7 +412,7 @@ void utils::selfTestHandler(const QString &mode, const QString &name, const QStr
             msgBox.exec();
 
             if (msgBox.clickedButton() == abortButton) {
-                cancelSelfTest(name);
+                cancelSelfTest(name, deviceType);
             }
         } else if (exitStatus == 0) {
             QString infoMessage = QObject::tr("A self-test has been requested successfully");

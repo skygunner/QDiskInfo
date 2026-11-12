@@ -86,6 +86,20 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
     WIN32_EXECUTABLE TRUE
 )
 
+include(CTest)
+if(BUILD_TESTING)
+    find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Test)
+    set(TEST_SOURCES ${PROJECT_SOURCES})
+    list(REMOVE_ITEM TEST_SOURCES "${CMAKE_SOURCE_DIR}/src/main.cpp")
+    add_executable(scan_tests tests/scan_tests.cpp ${TEST_SOURCES})
+    target_include_directories(scan_tests PRIVATE ${CMAKE_SOURCE_DIR}/include)
+    get_target_property(APP_DEFINITIONS ${PROJECT_NAME} COMPILE_DEFINITIONS)
+    target_compile_definitions(scan_tests PRIVATE ${APP_DEFINITIONS})
+    target_link_libraries(scan_tests PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Test)
+    add_test(NAME scan_tests COMMAND scan_tests)
+    set_tests_properties(scan_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+endif()
+
 include(GNUInstallDirs)
 install(TARGETS ${PROJECT_NAME}
     BUNDLE DESTINATION .

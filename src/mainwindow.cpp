@@ -15,6 +15,8 @@
 #include <QAbstractButton>
 #include <QMenuBar>
 #include <QVBoxLayout>
+#include <QStatusBar>
+#include <QTimer>
 
 const int PRECISION_TOTALS_TO_STR = 2;
 const int PRECISION_CAPACITY_TO_STR = 0;
@@ -24,6 +26,7 @@ MainWindow::MainWindow(QWidget *parent)
     , ui(new Ui::MainWindow)
     , settings("qdiskinfo", "qdiskinfo")
     , initializing(true)
+    , Utils(this)
     , mbSymbol("MB"), gbSymbol("GB"), tbSymbol("TB"), pbSymbol("PB")
 {
     ui->setupUi(this);
@@ -124,14 +127,44 @@ MainWindow::MainWindow(QWidget *parent)
         }
     });
 
-    QPair<QStringList, QJsonArray> values = Utils.scanDevices(initializing);
-    deviceOutputs = values.first;
-    devices = values.second;
-    if (!deviceOutputs.isEmpty()) {
+    connect(gridView, &GridView::diskSelected, this, [this](int index) {
+        if (index >= 0 && index < buttonGroup->buttons().size()) {
+            buttonGroup->buttons().at(index)->click();
+        }
+    });
+    connect(&Utils, &utils::devicesFound, this, [this](const QJsonArray &found) {
+        devices = found;
+        deviceOutputs.clear();
+        for (int i = 0; i < devices.size(); ++i) {
+            deviceOutputs.append(QString());
+        }
         updateUI();
-    }
+        statusBar()->showMessage(devices.isEmpty() ? tr("No disks found") : tr("Reading S.M.A.R.T. data…"));
+    });
+    connect(&Utils, &utils::deviceReady, this, [this](int index, QJsonObject device, const QString &output, const QString &error) {
+        if (index < 0 || index >= devices.size()) {
+            return;
+        }
+        device["scan_error"] = error;
+        devices[index] = device;
+        deviceOutputs[index] = output;
+        ++scanCompleted;
+        if (!error.isEmpty()) {
+            ++scanFailed;
+        }
+        updateUI();
+        statusBar()->showMessage(tr("Reading disks: %1/%2 (%3 failed)").arg(scanCompleted).arg(devices.size()).arg(scanFailed));
+    });
+    connect(&Utils, &utils::scanFinished, this, [this](const QString &error) {
+        ui->actionRescan_Refresh->setEnabled(true);
+        statusBar()->showMessage(error.isEmpty()
+            ? tr("Scan complete: %1 disks, %2 failed").arg(devices.size()).arg(scanFailed) : error);
+    });
+    updateUI();
     this->setFocus();
     initializing = false;
+    // The constructor must return before authentication or disk I/O begins.
+    QTimer::singleShot(0, this, &MainWindow::on_actionRescan_Refresh_triggered);
 
     if (!INCLUDE_OPTIONAL_RESOURCES || CHARACTER_IS_RIGHT) {
         QLayoutItem *leftSpacerItem = gridLayout->itemAtPosition(2, 0);
@@ -170,11 +203,16 @@ MainWindow::MainWindow(QWidget *parent)
 
 MainWindow::~MainWindow()
 {
+    disconnect(&Utils, nullptr, this, nullptr);
+    Utils.stopScan();
     delete ui;
 }
 
 void MainWindow::onNextButtonClicked()
 {
+    if (buttonGroup->buttons().isEmpty()) {
+        return;
+    }
     qsizetype currentIndex = buttonGroup->buttons().indexOf(buttonGroup->checkedButton());
     qsizetype nextIndex = (currentIndex + 1) % buttonGroup->buttons().size();
     buttonGroup->buttons().at(static_cast<int>(nextIndex))->click();
@@ -183,6 +221,9 @@ void MainWindow::onNextButtonClicked()
 
 void MainWindow::onPrevButtonClicked()
 {
+    if (buttonGroup->buttons().isEmpty()) {
+        return;
+    }
     qsizetype currentIndex = buttonGroup->buttons().indexOf(buttonGroup->checkedButton());
     qsizetype prevIndex = (currentIndex - 1 + buttonGroup->buttons().size()) % buttonGroup->buttons().size();
     buttonGroup->buttons().at(static_cast<int>(prevIndex))->click();
@@ -205,6 +246,13 @@ void MainWindow::updateNavigationButtons(qsizetype currentIndex)
 
 void MainWindow::updateUI(const QString &currentDeviceName)
 {
+    const QString previousDeviceName = Utils.clearButtonGroup(buttonGroup, horizontalLayout, buttonStretch, menuDisk);
+    buttonStretch = nullptr;
+    const QString selectedDeviceName = currentDeviceName.isEmpty() ? previousDeviceName : currentDeviceName;
+    globalObj = QJsonObject();
+    globalHealth = tr("Unknown");
+    globalNvmeSmartOrdered.clear();
+
     mbSymbol = locale.formattedDataSize(1 << 20, 1, QLocale::DataSizeTraditionalFormat).split(' ')[1];
     gbSymbol = locale.formattedDataSize(1 << 30, 1, QLocale::DataSizeTraditionalFormat).split(' ')[1];
     tbSymbol = locale.formattedDataSize(qint64(1) << 40, 1, QLocale::DataSizeTraditionalFormat).split(' ')[1];
@@ -244,6 +292,15 @@ void MainWindow::updateUI(const QString &currentDeviceName)
 
         QJsonDocument localDoc = QJsonDocument::fromJson(allOutput.toUtf8());
         QJsonObject localObj = localDoc.object();
+        // Keep the raw output intact for the ordered NVMe parser, while using
+        // the transport that actually succeeded for display and self-tests.
+        QJsonObject connection = localObj["device"].toObject();
+        connection["name"] = deviceName;
+        connection["type"] = device["type"];
+        if (connection["protocol"].toString().isEmpty()) {
+            connection["protocol"] = device["protocol"];
+        }
+        localObj["device"] = connection;
 
         QString protocol = localObj["device"].toObject()["protocol"].toString();
         bool isNvme = (protocol == "NVMe");
@@ -358,10 +415,15 @@ void MainWindow::updateUI(const QString &currentDeviceName)
             healthState = QStringLiteral("na");
         }
 
+        if (modelName.isEmpty()) {
+            modelName = deviceName;
+        }
         driveSlots.append({deviceName, modelName, diskCapacityString, temperature, health, protocol, healthState});
 
         CustomButton *button = new CustomButton(health, temperature, deviceName, healthColor, this);
-        button->setToolTip(tr("Disk") + " " + QString::number(i) + " : " +  modelName + " : " + diskCapacityString);
+        const QString error = device["scan_error"].toString();
+        button->setToolTip(tr("Disk") + " " + QString::number(i) + " : " + modelName + " : " + diskCapacityString
+                           + (error.isEmpty() ? QString() : "\n" + error));
         button->setProperty("deviceName", deviceName);
 
         buttonGroup->addButton(button);
@@ -415,7 +477,7 @@ void MainWindow::updateUI(const QString &currentDeviceName)
             }
         }
 
-        if (!currentDeviceName.isEmpty() && deviceName == currentDeviceName) {
+        if (!selectedDeviceName.isEmpty() && deviceName == selectedDeviceName) {
             deviceToSelect = i;
             globalObj = localObj;
             globalHealth = health;
@@ -427,15 +489,6 @@ void MainWindow::updateUI(const QString &currentDeviceName)
             diskAction->setChecked(true);
             firstTime = false;
         }
-
-        connect(gridView, &GridView::diskSelected, this, [=](int selectedIndex) {
-            if (selectedIndex >= 0 && selectedIndex < buttonGroup->buttons().size()) {
-                QAbstractButton *gridButton = buttonGroup->buttons().at(selectedIndex);
-                if (gridButton) {
-                    gridButton->click();
-                }
-            }
-        });
     }
 
     buttonStretch = new QSpacerItem(0, 0, QSizePolicy::Expanding, QSizePolicy::Minimum);
@@ -954,8 +1007,8 @@ void MainWindow::populateWindow(const QJsonObject &localObj, const QString &heal
                 mode = key;
             }
 
-            connect(action, &QAction::triggered, this, [this, mode, name, minutes]() {
-                Utils.selfTestHandler(mode, name, minutes);
+            connect(action, &QAction::triggered, this, [this, mode, name, minutes, type]() {
+                Utils.selfTestHandler(mode, name, minutes, type);
             });
         }
 
@@ -987,14 +1040,14 @@ void MainWindow::populateWindow(const QJsonObject &localObj, const QString &heal
 
         QAction *actionShort = new QAction(tr("Short"), this);
         selfTestMenu->addAction(actionShort);
-        connect(actionShort, &QAction::triggered, this, [this, mode = "short", name, minutes = "0"]() {
-            Utils.selfTestHandler(mode, name, minutes);
+        connect(actionShort, &QAction::triggered, this, [this, mode = "short", name, minutes = "0", type]() {
+            Utils.selfTestHandler(mode, name, minutes, type);
         });
 
         QAction *actionLong = new QAction(tr("Extended"), this);
         selfTestMenu->addAction(actionLong);
-        connect(actionLong , &QAction::triggered, this, [this, mode = "long", name, minutes = "0"]() {
-            Utils.selfTestHandler(mode, name, minutes);
+        connect(actionLong , &QAction::triggered, this, [this, mode = "long", name, minutes = "0", type]() {
+            Utils.selfTestHandler(mode, name, minutes, type);
         });
 
         if (nvmeSelfTestsTable.isEmpty()) {
@@ -1006,6 +1059,13 @@ void MainWindow::populateWindow(const QJsonObject &localObj, const QString &heal
                 createTablePopup(nvmeSelfTestsTable);
             });
         }
+    }
+
+    if (!localObj.contains("smart_status") && !localObj.contains("ata_smart_attributes")
+            && !localObj.contains("nvme_smart_health_information_log") && !localObj.contains("scsi_error_counter_log")) {
+        selfTestMenu->setEnabled(false);
+        selfTestLogAction->setEnabled(false);
+        ui->actionASCII_View->setEnabled(false);
     }
 
     if (uiMode == UiMode::Magician) {
@@ -1476,19 +1536,21 @@ void MainWindow::on_actionAbout_Qt_triggered()
 
 void MainWindow::on_actionRescan_Refresh_triggered()
 {
-    QPair<QStringList, QJsonArray> values = Utils.scanDevices(initializing);
-    deviceOutputs = values.first;
-    devices = values.second;
-    if (!deviceOutputs.isEmpty()) {
-        updateUI(Utils.clearButtonGroup(buttonGroup, horizontalLayout, buttonStretch, menuDisk));
+    if (!ui->actionRescan_Refresh->isEnabled()) {
+        return;
     }
+    ui->actionRescan_Refresh->setEnabled(false);
+    scanCompleted = 0;
+    scanFailed = 0;
+    statusBar()->showMessage(tr("Scanning disks…"));
+    Utils.scanDevices();
 }
 
 void MainWindow::on_actionIgnore_C4_Reallocation_Event_Count_toggled(bool enabled)
 {
     settings.setValue("IgnoreC4", enabled);
     if (!initializing) {
-        updateUI(Utils.clearButtonGroup(buttonGroup, horizontalLayout, buttonStretch, menuDisk));
+        updateUI();
     }
 }
 
@@ -1496,7 +1558,7 @@ void MainWindow::on_actionHEX_toggled(bool enabled)
 {
     settings.setValue("HEX", enabled);
     if (!initializing) {
-        updateUI(Utils.clearButtonGroup(buttonGroup, horizontalLayout, buttonStretch, menuDisk));
+        updateUI();
     }
 }
 
@@ -1504,7 +1566,7 @@ void MainWindow::on_actionUse_Fahrenheit_toggled(bool enabled)
 {
     settings.setValue("Fahrenheit", enabled);
     if (!initializing) {
-        updateUI(Utils.clearButtonGroup(buttonGroup, horizontalLayout, buttonStretch, menuDisk));
+        updateUI();
     }
 }
 
@@ -1519,7 +1581,7 @@ void MainWindow::on_actionUse_GB_instead_of_TB_toggled(bool gigabytes)
 {
     settings.setValue("UseGB", gigabytes);
     if (!initializing) {
-        updateUI(Utils.clearButtonGroup(buttonGroup, horizontalLayout, buttonStretch, menuDisk));
+        updateUI();
     }
 }
 
@@ -1550,7 +1612,7 @@ void MainWindow::on_actionClear_Settings_triggered()
         ui->actionUse_GB_instead_of_TB->setChecked(false);
 
         if (!initializing) {
-            updateUI(Utils.clearButtonGroup(buttonGroup, horizontalLayout, buttonStretch, menuDisk));
+            updateUI();
         }
     }
 }
