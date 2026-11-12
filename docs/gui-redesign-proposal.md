@@ -1,7 +1,9 @@
 # QDiskInfo GUI 重写选型与设计方案
 
-状态：已定稿（2026-09-23）
-范围：仅视图层重写；`utils`（smartctl 调用）、`jsonparser`、`asciiview`、健康度判定逻辑全部保留不动。
+状态：原方案于 2026-09-23 定稿；Magician、Crystal 和 Classic 视图已实现。2026-11-12 补充当前扫描实现与验证状态。
+范围：原方案仅涉及视图层，计划保留 `utils`、`jsonparser`、`asciiview` 和健康度判定逻辑；此后 `utils` 已为异步扫描与 USB 桥兼容性修改。
+
+第 1–5 节保留的是**当时的诊断、设计设想和验收目标**，其中的布局、文件名、架构示意和验收条件不代表逐项实现或通过。当前实现和待验证事项见第 6–7 节。
 
 ---
 
@@ -176,9 +178,9 @@ CDI 实测调色板：标题深蓝灰 `#253D58`、冰蓝 `#B8E2EC/#E2F9FD`、正
 
 ---
 
-## 6. 实施记录（2026-09-23，已完成 M1+M2）
+## 6. 实施记录（2026-09-23）
 
-两套主题均已实现并通过离屏截图验证（`shots/`，不入库）。文件清单：
+Magician 和 Crystal 视图及 Classic 回退已实现；当时记录曾进行离屏截图检查（`shots/`，不入库）。这不等于第 5 节全部验收项均已验证。文件清单：
 
 | 文件 | 作用 |
 |---|---|
@@ -209,4 +211,18 @@ CDI 实测调色板：标题深蓝灰 `#253D58`、冰蓝 `#B8E2EC/#E2F9FD`、正
 2. **Qt `slots` 宏**：参数名 `slots` 会宏展开破坏代码，已更名 `driveList`。
 3. **QWidget 子类 QSS 背景不渲染**：Sidebar 需 `WA_StyledBackground`。
 4. **Classic 残留在新视图背后**：`buildUiModePages()` 最初用 `addItem()` 把 .ui 的 gridLayout 挂进 classicPage——`addItem()` 不会 re-parent 子布局里的控件（那是 `addLayout()` 的行为），控件仍是 centralwidget 的子节点，藏页面时它们原样留在屏幕上。改用 `takeAt(0)` + `addLayout(gridLayout)` 后，classic 全部控件随页面隐藏/显示。已用 `QDISKINFO_SWITCH_TO` 离屏回归（classic 启动→运行时切换，扫描截图确认无 classic 纯绿/黄/红残留；反向 themed→classic 页面完整渲染）。
-4. **纯色状态色**：旧 `Qt::green/yellow/red` 曾流入新视图；改为 state 字符串 + 渲染期 token 映射。
+5. **纯色状态色**：旧 `Qt::green/yellow/red` 曾流入新视图；改为 state 字符串 + 渲染期 token 映射。
+
+## 7. 当前实现与验证状态（2026-11-12）
+
+### 需求与实现
+
+- 界面启动不应等待慢盘或权限请求：窗口启动后通过 `QProcess` 异步运行一个 `pkexec` 扫描助手，先返回设备列表，再顺序读取并逐盘更新界面。扫描期间禁止重复刷新；普通单盘超时或失败后继续处理其他盘。每次 smartctl 读取的超时为 20 秒；若进程卡在无法及时终止的内核 I/O 中，助手会停止后续读取。自检命令仍同步等待。
+- 对自动识别为 `sntjmicron` 的设备，先尝试 `-a --json=o -d sat,12`。仅当命令无相关错误、协议为 ATA 且包含有效 SMART 属性时采用该类型；否则以检测到的类型和 `-x` 回退。成功类型会用于后续自检。其他设备仍用检测类型的 `-x`。
+- 三种风格通过 **View → Magician / Crystal / Classic Style** 切换，`ui/mode` 持久化，默认 Magician；页面通过显示/隐藏切换。原方案中的具体侧栏、布局细节、文件路径和可选暗色主题是设计设想，不应视作逐项交付。
+
+### 已验证与待验证
+
+- 本次使用现有 `build` 目录执行 `cmake --build build -j 2` 和 `ctest --test-dir build --output-on-failure`，构建成功，`scan_tests` 通过。测试使用模拟 `smartctl` / `pkexec` 和 Qt offscreen，覆盖渐进扫描、重复刷新、超时、权限失败、`sat,12` 接受及回退等路径，不代表真实硬件验证。
+- 用户报告其 USB 转接 mSATA 盘上 `sudo timeout 15s smartctl -a -d sat,12 /dev/sdc` 成功，`-d sntjmicron` 和 `-d sat` 超时。这是独立命令的结果；**QDiskInfo 在该真实 USB 设备上的完整扫描、显示和后续操作仍待验证**。
+- 第 5 节的 ATA/NVMe/SCSI 实盘渲染、菜单及对话框、导出、自检、翻译等完整回归仍需逐项验证；历史离屏截图不能替代这些验收。

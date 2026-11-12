@@ -3,6 +3,16 @@ QDiskInfo is a frontend for smartctl (part of the smartmontools package). It pro
 ![mockup](https://github.com/edisionnano/QDiskInfo/assets/26039434/e5488f41-6ea2-4304-9ae8-13d5dac7715b)
 The icon is a modified version of the KDE Partition Manager logo which is available under GPL-3.0+.
 
+## Interface and disk scanning
+
+The **View** menu offers three styles: **Magician** (the default dark dashboard), **Crystal** (a compact device overview and SMART table), and **Classic** (the original layout). The selected style is saved and restored on the next launch. The design history and current verification status are documented in [docs/gui-redesign-proposal.md](docs/gui-redesign-proposal.md).
+
+The window opens before disk scanning finishes. A single `pkexec` authorization starts a helper that enumerates devices and reads them one at a time; the interface updates as each result arrives. Refresh is unavailable while a scan is running. Individual reads have a timeout, although a process stuck in kernel I/O can stop the helper rather than allow further reads. Self-test commands still wait synchronously.
+
+For devices detected as `sntjmicron`, QDiskInfo first tries `smartctl -a --json=o -d sat,12`, accepting it only when it returns valid ATA SMART attributes without command errors. Otherwise it falls back to `-x` with the detected type. Other devices use `-x` with their detected type. The successful type is retained for subsequent self-test commands.
+
+A user reported that `sudo timeout 15s smartctl -a -d sat,12 /dev/sdc` succeeded on their USB-connected mSATA drive, while `sntjmicron` and `sat` timed out. This confirms that standalone command for that device; QDiskInfo's complete scan and display path on the real USB device still needs verification.
+
 ## Packages
 [![Packaging status](https://repology.org/badge/vertical-allrepos/qdiskinfo.svg)](https://repology.org/project/qdiskinfo/versions)
 <br>Other than those mentioned in the widget above, there is also:
@@ -41,7 +51,13 @@ Finally, compile the project with all the threads using
 ```sh
 make -j$(nproc)
 ```
-This will create a `QDiskInfo` binary on the build directory but you can also install it using
+This will create a `QDiskInfo` binary in the build directory. CMake enables tests by default; they require the Qt Test development component. To run the scan and UI tests, use
+```sh
+ctest --output-on-failure
+```
+The test target uses Qt's offscreen platform and fake `smartctl` and `pkexec` commands, so it does not verify real disk or USB hardware. Use `-DBUILD_TESTING=OFF` when configuring if you do not need the tests or Qt Test.
+
+You can also install QDiskInfo using
 ```sh
 sudo make install
 ```
